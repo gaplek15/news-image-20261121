@@ -1,46 +1,67 @@
-"""THE WORLD — Saturday, 21 November 2026.
+"""THE WORLD — Saturday, 21 November 2026: emit the front page.
 
-One broadsheet page that sums up the day's world news, built as a
-single HTML front page and rendered once to news.png. The lead is the
-war crossing a border: Russian missiles landing in Poland during the
-biggest strike on Ukraine in months, with NATO's chief due in Warsaw
-the same day. Around it, the EU's fresh billion euros for Ukraine's
-arsenal, a tanker burning in the Strait of Hormuz, and Ebola's toll
-on children in Congo. In brief: Denmark expelling a Russian attache
-after a foiled murder plot, a 19-and-a-half-year sentence in the
-Pannun murder-for-hire case, a Houthi strike on Riyadh's PIF Tower,
-a fired US cyber chief, a subpoena for Nvidia over China chip sales,
-and Virginia's first measles death of 2026.
-
-This program only delivers that finished page to the harness. It
-reads nothing but the bundled image, writes nothing but the entry,
-and never touches the network, the clock, or a random number — run
-it twice and both outputs are the same bytes.
+The broadsheet for the day is already rendered and ships in this
+repository as news.png. All this program does is place an exact copy
+of that file at $MAKEFUN_OUTPUT_DIR/entry.png. Nothing is drawn,
+fetched, re-encoded, or timed here: the bytes that go in are the
+bytes that come out, so running it twice always produces the same
+file.
 """
 
+import hashlib
 import os
 import shutil
-from pathlib import Path
-
-SOURCE = "news.png"
-ENTRY = "entry.png"
+import sys
 
 
-def bundled_page() -> Path:
-    """The finished front page, sitting next to this file."""
-    return Path(__file__).resolve().parent / SOURCE
+def _abort(reason):
+    sys.stderr.write("entry failed: " + reason + "\n")
+    raise SystemExit(1)
 
 
-def deliver() -> None:
-    """Copy the front page into the harness output folder, unchanged."""
-    out = Path(os.environ["MAKEFUN_OUTPUT_DIR"])
-    out.mkdir(parents=True, exist_ok=True)
-    source = bundled_page()
-    target = out / ENTRY
-    shutil.copyfile(source, target)
-    if target.stat().st_size != source.stat().st_size:
-        raise SystemExit("entry.png does not match news.png")
+def _fingerprint(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as handle:
+        while True:
+            block = handle.read(1 << 20)
+            if not block:
+                break
+            h.update(block)
+    return h.hexdigest()
+
+
+def main():
+    folder = os.path.dirname(os.path.abspath(__file__))
+    artwork = os.path.join(folder, "news.png")
+    out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR")
+    if not out_dir:
+        _abort("MAKEFUN_OUTPUT_DIR is not set")
+    destination = os.path.join(out_dir, "entry.png")
+
+    if not os.path.isfile(artwork):
+        _abort("news.png is missing next to main.py")
+    os.makedirs(out_dir, exist_ok=True)
+    shutil.copyfile(artwork, destination)
+
+    source_bytes = os.path.getsize(artwork)
+    written_bytes = os.path.getsize(destination)
+    if source_bytes != written_bytes:
+        _abort(
+            "size mismatch after copy: news.png is %d bytes but "
+            "entry.png is %d bytes" % (source_bytes, written_bytes)
+        )
+    if _fingerprint(artwork) != _fingerprint(destination):
+        _abort("sha256 mismatch after copy: entry.png differs from news.png")
+    if written_bytes > 1048576:
+        _abort(
+            "entry.png is %d bytes, over the 1 MiB competition limit"
+            % written_bytes
+        )
+    print(
+        "wrote %s (%d bytes, sha256 verified)"
+        % (destination, written_bytes)
+    )
 
 
 if __name__ == "__main__":
-    deliver()
+    main()
